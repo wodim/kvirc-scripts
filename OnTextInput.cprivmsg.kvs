@@ -1,0 +1,32 @@
+event(OnTextInput,cprivmsg)
+{
+	// Use CPRIVMSG instead of PRIVMSG whenever possible
+	// This has different advantages depending on the network software,
+	// for ircu CPRIVMSG doesn't reset idle time and has no targets limit
+	// Not all networks support CPRIVMSG!
+	
+	if ($window.type != "query") {
+		return;
+	}
+	
+	%common = "";
+	
+	foreach (%channel, $window.list(channel)) {
+		if (($chan.ismeop(%channel) || $chan.ismevoice(%channel)) && $chan.ison($target, %channel)) {
+			%common = %channel;
+			continue;
+		}
+	}
+	
+	if (!%common) {
+		return;
+	}
+	
+	foreach (%line, $str.split($lf, $0)) {
+		quote -q CPRIVMSG $target $chan.name(%common) :%line;
+		echoprivmsg $me $my.user $my.host %line;
+	}
+	
+	halt;
+}
+
