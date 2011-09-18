@@ -1,0 +1,23 @@
+event(OnHighlight,highlightwin)
+{
+	if ($0 == "*buffextras") {
+		return;
+	}
+	
+	if (!%Highlight{$context} || !$window.exists(%Highlight{$context})) {
+		%Highlight{$context} = $window.open("m", "Highlights", $context, 110);
+	}
+	
+	if ($window.type == "channel") {
+		%target = $target;
+	} else {
+		%target = [query];
+	}
+	
+	if (!$6) {
+		echo -w=%Highlight{$context} -i=$msgtype(privatemessage) %target <$link($0, nick)> $3;
+	} else {
+		echo -w=%Highlight{$context} -i=$msgtype(action) %target $link($0, nick) $3;
+	}
+}
+
