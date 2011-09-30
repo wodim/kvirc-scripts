@@ -3,34 +3,69 @@ alias(sec2readable)
 	if (!$0 || !$isnumeric($0)) {
 		return 00:00;
 	}
-	
+
 	%time = $0;
 	%mins = $(%time / 60);
 	%time = $(%time % 60);
 	%secs = %time;
-	
+
 	if (%secs < 10) {
 		%secs = $str.append("0", %secs);
 	}
-	
+
 	return %mins\:%secs;
+}
+
+alias(dots)
+{
+	%orig = $0;
+
+	// pad with spaces
+	while ($($length(%orig) % 3) != 0) {
+		%orig = $str.prepend(%orig, " ");
+	}
+
+	%sections = $($length(%orig) / 3);
+	%comma = ".";
+
+	while (%sections != 0) {
+		if (%sections == 1) {
+			%comma = "";
+		}
+		%right = $str.right(%orig, $(3 * %sections));
+		%left = $str.left(%right, 3)%comma;
+		%ret = $str.append(%ret, %left);
+		%sections--;
+	}
+
+	return $str.strip(%ret);
+}
+
+alias(unescape)
+{
+	%ret = $str.replace($0, "&lt;", "<");
+	%ret = $str.replace($0, "&gt;", ">");
+	%ret = $str.replace($0, "&quot;", "\"");
+	%ret = $str.replace($0, "&amp;", "&");
+
+	return %ret;
 }
 
 event(OnChannelMessage,youtube)
 {
 	%requrl = "http://gdata.youtube.com/feeds/api/videos/"
-	
+
 	if (!$str.contains($3, "youtube.com\/watch")) {
 		return;
 	}
-	
+
 	%id = $str.grep("v=([a-zA-Z0-9\-\_]{11})", $3, "rp")[1];
-	
+
 	if (!%id) {
 		// malformed url
 		return;
 	}
-	
+
 	// ugly flood control, don't exec the script more than once in 3 secs
 	%chan = $md5($chan.name()$console());
 	if (!$isset(%LastYT{%chan})) {
@@ -41,27 +76,36 @@ event(OnChannelMessage,youtube)
 	} else {
 		%LastYT{%chan} = $unixtime();
 	}
-	
+
 	http.asyncGet -w=h -a -i=$channel (%requrl%id) {
-		%brand = $b()You$k(0, 4)Tube$o();
-	
+		%brand = $b()$k(1, 0)You$k(0, 4)Tube$o();
+
 		%contents = $file.read($2);
-	
+
 		%title = $str.grep("<media:title type='plain'>(.*)</media:title>", %contents, "rp")[1];
-		%views = $str.grep("viewCount='(.*)'", %contents, "rp")[1];
-		%rating = $str.grep("<gd:rating average='(.\\..)", %contents, "rp")[1];
+		%views = $dots($str.grep("viewCount='(.*)'", %contents, "rp")[1]);
+		%rating = $str.replace($str.grep("<gd:rating average='(.\\..)", %contents, "rp")[1], ".", ",");
 		%votes = $str.grep("numRaters='(\\d*)'", %contents, "rp")[1];
 		%length = $sec2readable($str.grep("<yt:duration seconds='(\\d*)'/>", %contents, "rp")[1]);
 		%author = $str.grep("<author><name>(.*)</name>", %contents, "rp")[1];
 		%ts = $str.grep("<published>(\\d\\d\\d\\d)-(\\d\\d)-(\\d\\d)T(\\d\\d:\\d\\d:\\d\\d).000Z</published>", %contents, "rp");
-		%date = %ts[3]"-"%ts[2]"-"%ts[1];
+		%date = $str.replace(%ts[3]"-"%ts[2]"-"%ts[1], "-", "/");
 		%time = %ts[4];
 		%link = $str.grep("http://www.youtube.com/watch\\?v=(...........)", %contents, "rp")[1];
-	
-		if (%title) {
-			say -r=$3 %brand - $b%title$b $b\(%length\)$b - http://youtu.be/%link - $b%views$b plays - score: $b%rating$b\/$b()5.0$b ($b%votes$b votes);
-			// longer version with more info
-			// say -r=$3 %brand - $b%title$b $b\(%length\)$b - http://youtu.be/%link - $b%views$b plays - score: $b%rating$b\/$b()5.0$b ($b%votes$b votes) - uploaded by $b%author$b on $b%date$b $b%time$b;
+		if (%votes) {
+			if (%votes == 1) {
+				%votestext = rated $b%rating$b\/$b()5,0$b ($b%votes$b vote);
+			} else {
+				%votestext = rated $b%rating$b\/$b()5,0$b ($b%votes$b votes);
+			}
+		} else {
+			%votestext = not rated yet;
 		}
+
+		if (%title) {
+			say -r=$3 %brand - $b$unescape(%title)$b $b\(%length\)$b - $b%views$b views - %votestext; // - uploaded by $b%author$b on $b%date$b $b%time$b;
+		}
+
+		file.remove $2;
 	}
 }
